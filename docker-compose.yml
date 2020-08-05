@@ -1,0 +1,35 @@
+version: '2.3'
+
+services:
+  main:
+    container_name: "vcdb_retrieval"
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    runtime: nvidia
+    restart: always
+    env_file:
+      - "docker-compose-env/main.env"
+    volumes:
+      - type: volume
+        source: nfs_shared
+        target: /nfs_shared
+        volume:
+          nocopy: true
+      - "/media/mmlab/hdd:/hdd"
+    expose:
+      - "8000"
+    ports:
+      - "{host}:22"
+      - "{host}:6006"
+      - "{host}:8000"
+    ipc: host
+    stdin_open: true
+    tty: true
+
+volumes:
+  nfs_shared:
+    driver_opts:
+      type: "nfs"
+      o: "addr=mldisk2.sogang.ac.kr,nolock,soft,rw"
+      device: ":/volume2/nfs_shared"
