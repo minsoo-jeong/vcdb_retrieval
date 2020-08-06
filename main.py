@@ -218,6 +218,7 @@ def main():
     parser.add_argument('-lr', '--learning_rate', type=float, default=1e-4)
     parser.add_argument('-m', '--margin', type=float, default=0.3)
     parser.add_argument('-c', '--comment', type=str, default='')
+    parser.add_argument('-e', '--epoch', type=int, default=50)
     args = parser.parse_args()
 
     margin = args.margin
@@ -294,7 +295,7 @@ def main():
     valid(net, valid_triplets_loader, criterion, l2_dist, 0)
     positive_ranking(net, vcdb_all_frames_loader, vcdb_positives, 0)
 
-    for e in range(1, 50, 1):
+    for e in range(1, args.epoch, 1):
         train(net, train_triplets_loader, optimizer, criterion, l2_dist, e)
         valid(net, valid_triplets_loader, criterion, l2_dist, e)
         positive_ranking(net, vcdb_all_frames_loader, vcdb_positives, e)

@@ -16,6 +16,11 @@ services:
         target: /nfs_shared
         volume:
           nocopy: true
+      - type: volume
+        source: MLVD
+        target: /MLVD
+        volume:
+          nocopy: true
       - "/media/mmlab/hdd:/hdd"
     expose:
       - "8000"
@@ -33,3 +38,8 @@ volumes:
       type: "nfs"
       o: "addr=mldisk2.sogang.ac.kr,nolock,soft,rw"
       device: ":/volume2/nfs_shared"
+  MLVD:
+    driver_opts:
+      type: "nfs"
+      o: "addr=mldisk2.sogang.ac.kr,nolock,soft,rw"
+      device: ":/volume2/nfs_shared/MLVD"
