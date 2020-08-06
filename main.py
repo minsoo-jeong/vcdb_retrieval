@@ -217,7 +217,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train for VCDB Retrieval.")
     parser.add_argument('-lr', '--learning_rate', type=float, default=1e-4)
     parser.add_argument('-m', '--margin', type=float, default=0.3)
-    parser.add_argument('-c', '--comment', tyep=str, default='')
+    parser.add_argument('-c', '--comment', type=str, default='')
     args = parser.parse_args()
 
     margin = args.margin
