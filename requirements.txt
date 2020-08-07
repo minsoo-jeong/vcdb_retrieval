@@ -8,3 +8,5 @@ scipy
 faiss-gpu
 XlsxWriter
 pandas
+pymediainfo
+scenedetect
