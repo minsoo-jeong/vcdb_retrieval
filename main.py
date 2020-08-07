@@ -51,7 +51,10 @@ def init_logger(comment=''):
     current_time = current.strftime('%H%M%S')
     basename = comment if comment is not None and comment != '' else current_time
 
-    log_dir = f'/hdd/vcdb_retrieval_ckpt/{current_date}/{basename}'
+    log_dir = f'/hdd/ms/vcdb_retrieval_ckpt/{current_date}/{basename}'
+    if os.path.exists(log_dir):
+        log_dir = f'/hdd/ms/vcdb_retrieval_ckpt/{current_date}/{basename}_{current_time}'
+
     ckpt_dir = f'{log_dir}/saved_model'
     os.makedirs(ckpt_dir)
     global writer
@@ -79,7 +82,7 @@ def init_logger(comment=''):
     logger.info(f'Log directory ... {log_dir}')
     logger.info("=========================================================")
 
-    return log_dir, ckpt_dir
+
 
 
 def train(net, loader, optimizer, criterion, l2_dist, epoch, tag='loss/train_loss'):
@@ -206,15 +209,16 @@ def positive_ranking(net, vcdb_loader, vcdb_positives, epoch):
     dist, index = vcdb_index.search(features[anchor], features.shape[0])
     pos = np.where(index == idx[:, 1:])
     rank = pos[1]
+    bot_30=int(index.shape[0]*0.3)
     dist = dist[pos]
 
     logger.info(f'[EPOCH {epoch}] '
-                f'dist: {np.mean(dist):.4f}({np.mean(np.sort(dist)[::-1][:100]):.4f})({np.max(dist):.4f}), '
-                f'rank: {np.mean(rank):.2f}({np.mean(np.sort(rank)[::-1][:100]):.4f})({np.max(rank):.2f})')
+                f'dist: {np.mean(dist):.4f}({np.mean(np.sort(dist)[::-1][:bot_30]):.4f})({np.max(dist):.4f}), '
+                f'rank: {np.mean(rank):.2f}({np.mean(np.sort(rank)[::-1][:bot_30]):.2f})({np.max(rank):.2f})')
     writer.add_scalar('rank/avg_dist', np.mean(dist), epoch)
     writer.add_scalar('rank/avg_rank', np.mean(rank), epoch)
-    writer.add_scalar('rank/top100_avg_dist', np.mean(np.sort(dist)[::-1][:100]), epoch)
-    writer.add_scalar('rank/top100_avg_rank', np.mean(np.sort(rank)[::-1][:100]), epoch)
+    writer.add_scalar('rank/bottom_30_avg_dist', np.mean(np.sort(dist)[::-1][:bot_30]), epoch)
+    writer.add_scalar('rank/bottom_30_rank', np.mean(np.sort(rank)[::-1][:bot_30]), epoch)
 
 
 def main():
@@ -224,6 +228,7 @@ def main():
     parser.add_argument('-c', '--comment', type=str, default='')
     parser.add_argument('-e', '--epoch', type=int, default=50)
     parser.add_argument('-b', '--batch', type=int, default=64)
+    parser.add_argument('-o','--optim',type=str,default='sgd')
     args = parser.parse_args()
 
     margin = args.margin
@@ -231,11 +236,11 @@ def main():
     weight_decay = 0  # 5e-5
     ckpt = None
 
-    vcdb_positives_path = 'sampling/vcdb_positive.csv'
-    train_triplets_path = 'sampling/fivr_triplet_0805_margin.csv'  # 'sampling/fivr_triplet.csv'
-    valid_triplets_path = 'sampling/vcdb_triplet_0805_margin.csv'
+    vcdb_positives_path = 'sampling/data/vcdb_positive.csv'
+    train_triplets_path = 'sampling/data/fivr_triplet_0806.csv'  # 'sampling/fivr_triplet.csv'
+    valid_triplets_path = 'sampling/data/vcdb_triplet_0806.csv'
 
-    log_dir, ckpt_dir = init_logger(args.comment)
+    init_logger(args.comment)
     logger.info(args)
     logger.info(f'lr: {learning_rate}, margin: {margin}')
     logger.info(f'train_triplets_path: {train_triplets_path}, valid_triplets_path: {valid_triplets_path}')
@@ -256,8 +261,10 @@ def main():
     # Optimizer
     criterion = nn.TripletMarginLoss(margin)
     l2_dist = nn.PairwiseDistance()
-    optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    # optimizer = optim.SGD(net.parameters(), lr=learning_rate, weight_decay=weight_decay, momentum=0.9)
+    optimizer = optim.SGD(net.parameters(), lr=learning_rate, weight_decay=weight_decay, momentum=0.9)
+    if args.optim=='adam':
+        optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=weight_decay)
+
     # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 30, 50], gamma=0.1)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[50, 100], gamma=0.1)
     # Data
