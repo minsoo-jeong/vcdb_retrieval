@@ -40,12 +40,16 @@ def read_positive_pair(filename):
 
     return df
 
+def read_positive_csv(csv_path):
+    df = pd.read_csv(csv_path)[['a', 'a_frame', 'b', 'b_frame']].to_numpy()
+
+    return df
 
 def init_logger(comment=''):
     current = datetime.now(kst)
     current_date = current.strftime('%m%d')
     current_time = current.strftime('%H%M%S')
-    basename = comment if comment is not None or comment != '' else current_time
+    basename = comment if comment is not None and comment != '' else current_time
 
     log_dir = f'/hdd/vcdb_retrieval_ckpt/{current_date}/{basename}'
     ckpt_dir = f'{log_dir}/saved_model'
@@ -219,6 +223,7 @@ def main():
     parser.add_argument('-m', '--margin', type=float, default=0.3)
     parser.add_argument('-c', '--comment', type=str, default='')
     parser.add_argument('-e', '--epoch', type=int, default=50)
+    parser.add_argument('-b', '--batch', type=int, default=64)
     args = parser.parse_args()
 
     margin = args.margin
@@ -226,7 +231,7 @@ def main():
     weight_decay = 0  # 5e-5
     ckpt = None
 
-    vcdb_positives_path = 'sampling/vcdb_positive.txt'
+    vcdb_positives_path = 'sampling/vcdb_positive.csv'
     train_triplets_path = 'sampling/fivr_triplet_0805_margin.csv'  # 'sampling/fivr_triplet.csv'
     valid_triplets_path = 'sampling/vcdb_triplet_0805_margin.csv'
 
@@ -251,8 +256,8 @@ def main():
     # Optimizer
     criterion = nn.TripletMarginLoss(margin)
     l2_dist = nn.PairwiseDistance()
-    # optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    optimizer = optim.SGD(net.parameters(), lr=learning_rate, weight_decay=weight_decay, momentum=0.9)
+    optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    # optimizer = optim.SGD(net.parameters(), lr=learning_rate, weight_decay=weight_decay, momentum=0.9)
     # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 30, 50], gamma=0.1)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[50, 100], gamma=0.1)
     # Data
@@ -285,7 +290,7 @@ def main():
         batch_size=64, shuffle=False, num_workers=4)
 
     vcdb_core = np.load('/MLVD/VCDB/meta/vcdb_core.pkl', allow_pickle=True)
-    vcdb_positives = read_positive_pair(vcdb_positives_path)
+    vcdb_positives = read_positive_csv(vcdb_positives_path)
     vcdb_all_frames = np.array(
         [os.path.join('/MLVD/VCDB/frames', k, f) for k, frames in vcdb_core.items() for f in frames])
 

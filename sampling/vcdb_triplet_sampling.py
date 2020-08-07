@@ -36,6 +36,10 @@ def load_feature(paths):
 
     return features, length, index
 
+def read_csv(csv_path):
+    df = pd.read_csv(csv_path)
+    df = df.astype({'idx': int, 'ann_idx': int, 'a_frame_idx': int, 'b_frame_idx': int, 'dist': float})
+    return df
 
 def read_text(filename):
     with open(filename, 'r') as f:
@@ -57,13 +61,14 @@ def distance(a, b):
 
 if __name__ == '__main__':
     fivr_bg = np.load('/MLVD/VCDB/meta/vcdb_bg.pkl', allow_pickle=True)
-    # positives = read_text('dataset/positive_beautiful_mind_game_theory.txt')
-    positives = read_text('vcdb_positive.txt')
-    save_to = 'vcdb_triplet_0805_margin.csv'
+
+    positives = read_csv('vcdb_positive.csv')
+    save_to = 'vcdb_triplet_0806.csv'
     print(positives)
+    print(positives.a)
 
     videos = {v: n for n, v in enumerate(sorted(list(set(list(positives.a) + list(positives.b)))))}
-    bg_videos = {v: n for n, v in enumerate(np.load('/MLVD/VCDB/meta/vcdb_videos_bg.npy')[:1000])}
+    bg_videos = {v: n for n, v in enumerate(np.load('/MLVD/VCDB/meta/vcdb_videos_bg.npy')[:10000])}
 
     # feature_base = '/hdd/FIVR_core/mobilenet/rmac'
     feature_base = '/MLVD/VCDB/mobilenet/rmac'
