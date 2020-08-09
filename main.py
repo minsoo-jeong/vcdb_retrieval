@@ -23,26 +23,15 @@ import logging
 import pprint
 
 warnings.filterwarnings("ignore", category=torch.jit.TracerWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
 kst = timezone(timedelta(hours=9))
-
 
 def read_triplets(csv_path):
     df = pd.read_csv(csv_path)[['anc', 'anc_frame', 'pos', 'pos_frame', 'neg', 'neg_frame']].to_numpy()
     return df
 
-
-# to csv
-def read_positive_pair(filename):
-    with open(filename, 'r') as f:
-        l = [i.strip().split(',') for i in f.readlines()]
-        df = pd.DataFrame(l, columns=['idx', 'ann_idx', 'group', 'a', 'a_frame_idx', 'a_frame', 'b', 'b_frame_idx',
-                                      'b_frame', 'dist'])[['a', 'a_frame', 'b', 'b_frame']].to_numpy()
-
-    return df
-
 def read_positive_csv(csv_path):
     df = pd.read_csv(csv_path)[['a', 'a_frame', 'b', 'b_frame']].to_numpy()
-
     return df
 
 def init_logger(comment=''):
@@ -85,7 +74,7 @@ def init_logger(comment=''):
 
 
 
-def train(net, loader, optimizer, criterion, l2_dist, epoch, tag='loss/train_loss'):
+def train(net, loader, optimizer, criterion, l2_dist, epoch):
     losses = AverageMeter()
     pos_distance = AverageMeter()
     neg_distance = AverageMeter()
@@ -109,9 +98,7 @@ def train(net, loader, optimizer, criterion, l2_dist, epoch, tag='loss/train_los
                             f'pos_dist: {torch.mean(pos_dist):.4f}({pos_distance.avg:.4f}), '
                             f'neg_dist: {torch.mean(neg_dist):.4f}({neg_distance.avg:.4f}), '
                             f'distance_gap: {torch.mean(neg_dist - pos_dist):.4f}({distance_gap.avg:.4f})')
-        # if i % 10 == 0:
-        #     bar.write(f'[Epoch {epoch}] ' # iter : {epoch * len(loader) + i}
-        #               f'train_loss : {losses.val:.4f}({losses.avg:.4f})')
+
         bar.update()
     bar.close()
     logger.info(f'[EPOCH {epoch}] '
@@ -119,68 +106,48 @@ def train(net, loader, optimizer, criterion, l2_dist, epoch, tag='loss/train_los
                 f'pos_dist: {pos_distance.avg:.4f}, '
                 f'neg_dist: {neg_distance.avg:.4f}, '
                 f'gap: {distance_gap.avg:.4f}')
-    writer.add_scalar(tag, losses.avg, epoch)
+    writer.add_scalar('loss/train_loss', losses.avg, epoch)
     writer.add_scalar('distance/train_pos_distance', pos_distance.avg, epoch)
     writer.add_scalar('distance/train_neg_distance', neg_distance.avg, epoch)
     writer.add_scalar('distance/train_distance_gap', distance_gap.avg, epoch)
 
 
-def valid(net, loader, criterion, l2_dist, epoch, tag='loss/valid_loss'):
+@torch.no_grad()
+def valid(net, loader, criterion, l2_dist, epoch):
     losses = AverageMeter()
     pos_distance = AverageMeter()
     neg_distance = AverageMeter()
     distance_gap = AverageMeter()
     net.eval()
     bar = tqdm(loader, ncols=200)
-    with torch.no_grad():
-        for i, (path, frames) in enumerate(loader, 1):
-            out = net(*frames)
-            loss = criterion(*out)
-            losses.update(loss)
-            pos_dist = l2_dist(*out[:2])
-            neg_dist = l2_dist(out[0], out[2])
-            pos_distance.update(torch.mean(pos_dist), len(path[0]))
-            neg_distance.update(torch.mean(neg_dist), len(path[0]))
-            distance_gap.update(torch.mean(neg_dist - pos_dist), len(path[0]))
 
-            bar.set_description(f'[Epoch {epoch}] '  # [iter {epoch * len(loader) + i}]
-                                f'valid_loss: {losses.val:.4f}({losses.avg:.4f}), '
-                                f'pos_dist: {torch.mean(pos_dist):.4f}({pos_distance.avg:.4f}), '
-                                f'neg_dist: {torch.mean(neg_dist):.4f}({neg_distance.avg:.4f}), '
-                                f'distance_gap: {torch.mean(neg_dist - pos_dist):.4f}({distance_gap.avg:.4f})')
-            # if i % 10 == 0:
-            #     bar.write(f'[Epoch {epoch}] ' # iter : {epoch * len(loader) + i}
-            #               f'valid_loss : {losses.val:.4f}({losses.avg:.4f})')
-            bar.update()
+    for i, (path, frames) in enumerate(loader, 1):
+        out = net(*frames)
+        loss = criterion(*out)
+        losses.update(loss)
+        pos_dist = l2_dist(*out[:2])
+        neg_dist = l2_dist(out[0], out[2])
+        pos_distance.update(torch.mean(pos_dist), len(path[0]))
+        neg_distance.update(torch.mean(neg_dist), len(path[0]))
+        distance_gap.update(torch.mean(neg_dist - pos_dist), len(path[0]))
+
+        bar.set_description(f'[Epoch {epoch}] '  # [iter {epoch * len(loader) + i}]
+                            f'valid_loss: {losses.val:.4f}({losses.avg:.4f}), '
+                            f'pos_dist: {torch.mean(pos_dist):.4f}({pos_distance.avg:.4f}), '
+                            f'neg_dist: {torch.mean(neg_dist):.4f}({neg_distance.avg:.4f}), '
+                            f'distance_gap: {torch.mean(neg_dist - pos_dist):.4f}({distance_gap.avg:.4f})')
+
+        bar.update()
     bar.close()
     logger.info(f'[EPOCH {epoch}] '
                 f'valid_loss: {losses.avg}, '
                 f'pos_dist: {pos_distance.avg:.4f}, '
                 f'neg_dist: {neg_distance.avg:.4f}, '
                 f'gap: {distance_gap.avg:.4f}')
-    writer.add_scalar(tag, losses.avg, epoch)
+    writer.add_scalar('loss/valid_loss', losses.avg, epoch)
     writer.add_scalar('distance/valid_pos_distance', pos_distance.avg, epoch)
     writer.add_scalar('distance/valid_neg_distance', neg_distance.avg, epoch)
     writer.add_scalar('distance/valid_distance_gap', distance_gap.avg, epoch)
-
-
-def eval(net, loader, l2_dist, epoch, tag='eval/positive_distance'):
-    distance = AverageMeter()
-    net.eval()
-    bar = tqdm(loader, ncols=200)
-    with torch.no_grad():
-        for i, (path, frames) in enumerate(loader, 1):
-            out = net(*frames, frames[0])
-            dist = l2_dist(*out[:2])
-            distance.update(torch.mean(dist), len(path[0]))
-            bar.set_description(f'[Epoch {epoch}][{distance.count}/{len(loader.dataset)}] '
-                                f'distance : {distance.sum:.4f}')
-            # print(torch.pow(loss,2), dist[i])
-            # bar.rate({'abc':'123'})
-            bar.update()
-        bar.close()
-        logger.info(f'[EPOCH {epoch}] distance : {distance.sum}')
-        writer.add_scalar(tag, distance.sum, epoch)
 
 
 @torch.no_grad()
