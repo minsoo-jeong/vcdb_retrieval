@@ -68,18 +68,15 @@ def distance(a, b):
 #     bg_videos = {v: n for n, v in enumerate(np.load('/hdd/FIVR_core/fivr_videos_bg.npy')[:1000])}
 
 if __name__ == '__main__':
-    # fivr_bg = np.load('/hdd/FIVR_core/fivr_bg.pkl', allow_pickle=True)
+
     fivr_bg = np.load('/MLVD/FIVR/meta/fivr_bg.pkl', allow_pickle=True)
-    # positives = read_text('dataset/positive_beautiful_mind_game_theory.txt')
-    positives = read_csv('fivr_positive.csv')
+    positives = read_csv('data/fivr_positive_0809.csv')
     print(positives)
-    save_to = 'fivr_triplet_0806.csv'
+    save_to = 'data/fivr_triplet_0809_2.csv'
     videos = {v: n for n, v in enumerate(sorted(list(set(list(positives.a) + list(positives.b)))))}
-    # bg_videos = {v: n for n, v in enumerate(np.load('/hdd/FIVR_core/fivr_videos_bg.npy')[:1000])}
     bg_videos = {v: n for n, v in enumerate(np.load('/MLVD/FIVR/meta/fivr_videos_bg.npy')[:10000])}
 
     feature_base = '/MLVD/FIVR/mobilenet/rmac'
-    # feature_base = '/MLVD/VCDB/mobilenet/center224_rmac'
     features, length, index = load_feature([f'{feature_base}/{v}.pth' for v in videos])
     bg_features, bg_length, _ = load_feature([f'{feature_base}/{v}.pth' for v in bg_videos])
     print(features.shape)
@@ -89,8 +86,7 @@ if __name__ == '__main__':
     bg_index.add(bg_features)
 
     bg_table = np.array([[v, i] for n, v in enumerate(bg_videos) for i in range(bg_length[n])])
-    # print(bg_table)
-
+    used = []
     triplets = []
     for pos in tqdm(positives.values):
         idx, a, ss, se, ai, a_frame, b, bi, b_frame, p_dist = pos
@@ -100,16 +96,32 @@ if __name__ == '__main__':
         pos_dist = distance(af, bf)
 
         if pos_dist != 0:
-            neg_dist, neg_idx = bg_index.search(np.concatenate([af, bf]), 10)
-            triplets += [[idx, ss, se, a, ai, a_frame, b, bi, b_frame, *bg_table[neg_idx[0][n]],
-                          fivr_bg[bg_table[neg_idx[0][n]][0]][int(bg_table[neg_idx[0][n]][1])],
-                          p_dist, pos_dist, i] for n, i in
-                         enumerate(neg_dist[0]) if pos_dist - 0.3 < i < pos_dist]
+            neg_dist, neg_idx = bg_index.search(np.concatenate([af, bf]), 1000)
 
-            triplets += [[idx, ss, se, b, bi, b_frame, a, ai, a_frame, *bg_table[neg_idx[1][n]],
-                          fivr_bg[bg_table[neg_idx[1][n]][0]][int(bg_table[neg_idx[1][n]][1])],
-                          p_dist, pos_dist, i] for n, i in
-                         enumerate(neg_dist[1]) if pos_dist - 0.3 < i < pos_dist]
+            rank = [r for r in np.where((neg_dist[0] < pos_dist) & (pos_dist - 0.3 < neg_dist[0]))[0] if
+                    neg_idx[0][r] not in used]
+            triplets += [[idx, ss, se, a, ai, a_frame, b, bi, b_frame, *bg_table[neg_idx[0][r]],
+                          fivr_bg[bg_table[neg_idx[0][r]][0]][int(bg_table[neg_idx[0][r]][1])],
+                          p_dist, pos_dist, neg_dist[0][r]] for r in rank[:10]]
+            used.extend([neg_idx[0][r] for r in rank[:10]])
+
+            rank = [r for r in np.where((neg_dist[1] < pos_dist) & (pos_dist - 0.3 < neg_dist[1]))[0] if
+                    neg_idx[1][r] not in used]
+            triplets += [[idx, ss, se, b, bi, b_frame, a, ai, a_frame, *bg_table[neg_idx[1][r]],
+                          fivr_bg[bg_table[neg_idx[1][r]][0]][int(bg_table[neg_idx[1][r]][1])],
+                          p_dist, pos_dist, neg_dist[1][r]] for r in rank[:10]]
+            used.extend([neg_idx[1][r] for r in rank[:10]])
+
+
+            # triplets += [[idx, ss, se, a, ai, a_frame, b, bi, b_frame, *bg_table[neg_idx[0][n]],
+            #               fivr_bg[bg_table[neg_idx[0][n]][0]][int(bg_table[neg_idx[0][n]][1])],
+            #               p_dist, pos_dist, i] for n, i in
+            #              enumerate(neg_dist[0]) if pos_dist - 0.3 < i < pos_dist]
+            #
+            # triplets += [[idx, ss, se, b, bi, b_frame, a, ai, a_frame, *bg_table[neg_idx[1][n]],
+            #               fivr_bg[bg_table[neg_idx[1][n]][0]][int(bg_table[neg_idx[1][n]][1])],
+            #               p_dist, pos_dist, i] for n, i in
+            #              enumerate(neg_dist[1]) if pos_dist - 0.3 < i < pos_dist]
 
     print(len(triplets))
     df = pd.DataFrame(triplets,

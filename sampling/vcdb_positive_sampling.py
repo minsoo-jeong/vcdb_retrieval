@@ -101,8 +101,8 @@ if __name__ == '__main__':
 
     video_root = '/hdd/VCDB_core/videos'
     frame_root = '/MLVD/VCDB/frames'
-    vcdb = np.load('/MLVD/VCDB/vcdb.pkl', allow_pickle=True)
-    vcdb_core_videos = np.load('/MLVD/VCDB/vcdb_videos_core.npy')
+    vcdb = np.load('/MLVD/VCDB/meta/vcdb.pkl', allow_pickle=True)
+    vcdb_core_videos = np.load('/MLVD/VCDB/meta/vcdb_videos_core.npy')
     annotation = scan_vcdb_annotation('/MLVD/VCDB/annotation')
     meta = {m['file_name']: dict(m) for m in csv.DictReader(open('/MLVD/VCDB/meta/vcdb_meta_core.csv', "r"))}
 

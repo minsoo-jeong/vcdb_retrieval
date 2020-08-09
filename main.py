@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision.transforms import transforms as trn
+from collections import defaultdict
 
 import os
 import sys
@@ -26,13 +27,16 @@ warnings.filterwarnings("ignore", category=torch.jit.TracerWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 kst = timezone(timedelta(hours=9))
 
+
 def read_triplets(csv_path):
     df = pd.read_csv(csv_path)[['anc', 'anc_frame', 'pos', 'pos_frame', 'neg', 'neg_frame']].to_numpy()
     return df
 
+
 def read_positive_csv(csv_path):
     df = pd.read_csv(csv_path)[['a', 'a_frame', 'b', 'b_frame']].to_numpy()
     return df
+
 
 def init_logger(comment=''):
     current = datetime.now(kst)
@@ -40,6 +44,10 @@ def init_logger(comment=''):
     current_time = current.strftime('%H%M%S')
     basename = comment if comment is not None and comment != '' else current_time
 
+    def timetz(*args):
+        return datetime.now(kst).timetuple()
+
+    logging.Formatter.converter = timetz
     log_dir = f'/hdd/ms/vcdb_retrieval_ckpt/{current_date}/{basename}'
     if os.path.exists(log_dir):
         log_dir = f'/hdd/ms/vcdb_retrieval_ckpt/{current_date}/{basename}_{current_time}'
@@ -72,6 +80,29 @@ def init_logger(comment=''):
     logger.info("=========================================================")
 
 
+def scan_vcdb_annotation(root):
+    def parse(ann):
+        a, b, *times = ann.strip().split(',')
+        times = [sum([60 ** (2 - n) * int(u) for n, u in enumerate(t.split(':'))]) for t in times]
+        return [a, b, *times]
+
+    groups = os.listdir(root)
+    annotations = []
+    frame_annotations = []
+    for g in groups:
+        f = open(os.path.join(root, g), 'r')
+        annotations += [[os.path.splitext(g)[0], *parse(l)] for l in f.readlines()]
+
+    for ann in annotations:
+        g, a, b, sa, ea, sb, eb = ann
+        if a != b and sa != sb and ea != eb:
+            cnt = min(ea - sa, eb - sb)
+            af = np.linspace(sa, ea, cnt, endpoint=False, dtype=np.int)
+            bf = np.linspace(sb, eb, cnt, endpoint=False, dtype=np.int)
+            frame_annotations += [[g, a, f[0], b, f[1]] for f in zip(af, bf)]
+            frame_annotations += [[g, b, f[1], a, f[0]] for f in zip(af, bf)]
+
+    return annotations, frame_annotations
 
 
 def train(net, loader, optimizer, criterion, l2_dist, epoch):
@@ -151,12 +182,78 @@ def valid(net, loader, criterion, l2_dist, epoch):
 
 
 @torch.no_grad()
+def positive_ranking2(net, vcdb_loader, vcdb_frame_annotation, epoch, idx_margin=2, query=1000):
+    net.eval()
+    features = []
+    bar = tqdm(vcdb_loader, ncols=200)
+    frame_idx = defaultdict(list)
+    c = 0
+    for i, (path, frame) in enumerate(vcdb_loader):
+        out = net(frame, single=True)
+        features.append(out)
+        bar.update()
+        for p in path:
+            vid = os.path.basename(os.path.dirname(p))
+            frame_idx[vid].append((os.path.basename(p), c))
+            c += 1
+    features = torch.cat(features).cpu().numpy()
+
+    frame_idx = {k: np.array(sorted(frame_idx[k], key=lambda x: x[0]))[:, 1].astype(np.int) for k, v in
+                 frame_idx.items()}
+    bar.close()
+    vcdb_index = faiss.IndexFlatL2(features.shape[1])
+    vcdb_index.add(features)
+
+    idx = defaultdict(list)
+    for ann in vcdb_frame_annotation:
+        idx[frame_idx[ann[1]][ann[2]]].append(frame_idx[ann[3]][ann[4]])
+
+    # for ann in vcdb_frame_annotation:
+    #     g, a, ai, b, bi = ann
+    #     if frame_idx.get(a, [-1])[0] != -1 and frame_idx.get(b, [-1])[0] != -1 and len(frame_idx[a]) > ai and len(
+    #             frame_idx[b]) > bi:
+    #         idx[frame_idx[a][ai]].append(frame_idx[b][bi])
+
+    anchor = np.array(list(idx.keys()))
+    bar = tqdm(anchor, ncols=200)
+    dist = []
+    rank = []
+    for i in range(0, len(anchor), query):
+        anchor_sub = anchor[i:i + query]
+        dist_sub, index = vcdb_index.search(features[anchor_sub], features.shape[0])
+        pos = np.array(
+            [[n, np.where((correct - idx_margin <= index[n]) & (index[n] <= correct + idx_margin))[0][0]] for n, a in
+             enumerate(anchor_sub) for correct in idx[a]])
+        pos = (pos[:, 0], pos[:, 1])
+        rank_sub = pos[1]
+        dist_sub = dist_sub[pos]
+        dist.extend(list(dist_sub))
+        rank.extend(list(rank_sub))
+
+        bar.set_description(f'[Epoch {epoch}] '  # [iter {epoch * len(loader) + i}]
+                            f'dist: {np.mean(dist_sub):.4f}({np.mean(dist):.4f}), '
+                            f'rank: {np.mean(rank_sub):>6.1f}({np.mean(rank):.1f})')
+
+        bar.update(anchor_sub.shape[0])
+    bar.close()
+
+    bot_30 = int(len(dist) * 0.3)
+    logger.info(f'[EPOCH {epoch}] '
+                f'dist: {np.mean(dist):.4f}({np.mean(np.sort(dist)[::-1][:bot_30]):.4f})({np.max(dist):.4f}), '
+                f'rank: {np.mean(rank):>6.1f}({np.mean(np.sort(rank)[::-1][:bot_30]):.1f})({np.max(rank):.1f})')
+
+    writer.add_scalar('rank/avg_dist', np.mean(dist), epoch)
+    writer.add_scalar('rank/avg_rank', np.mean(rank), epoch)
+    writer.add_scalar('rank/bottom_30_avg_dist', np.mean(np.sort(dist)[::-1][:bot_30]), epoch)
+    writer.add_scalar('rank/bottom_30_rank', np.mean(np.sort(rank)[::-1][:bot_30]), epoch)
+
+
+@torch.no_grad()
 def positive_ranking(net, vcdb_loader, vcdb_positives, epoch):
     net.eval()
     features = []
     paths = []
     bar = tqdm(vcdb_loader, ncols=200)
-
     for i, (path, frame) in enumerate(vcdb_loader):
         out = net(frame, single=True)
         features.append(out)
@@ -176,7 +273,7 @@ def positive_ranking(net, vcdb_loader, vcdb_positives, epoch):
     dist, index = vcdb_index.search(features[anchor], features.shape[0])
     pos = np.where(index == idx[:, 1:])
     rank = pos[1]
-    bot_30=int(index.shape[0]*0.3)
+    bot_30 = int(index.shape[0] * 0.3)
     dist = dist[pos]
 
     logger.info(f'[EPOCH {epoch}] '
@@ -195,7 +292,7 @@ def main():
     parser.add_argument('-c', '--comment', type=str, default='')
     parser.add_argument('-e', '--epoch', type=int, default=50)
     parser.add_argument('-b', '--batch', type=int, default=64)
-    parser.add_argument('-o','--optim',type=str,default='sgd')
+    parser.add_argument('-o', '--optim', type=str, default='sgd')
     args = parser.parse_args()
 
     margin = args.margin
@@ -204,7 +301,7 @@ def main():
     ckpt = None
 
     vcdb_positives_path = 'sampling/data/vcdb_positive.csv'
-    train_triplets_path = 'sampling/data/fivr_triplet_0806.csv'  # 'sampling/fivr_triplet.csv'
+    train_triplets_path = 'sampling/data/fivr_triplet_0809.csv'  # 'sampling/fivr_triplet.csv'
     valid_triplets_path = 'sampling/data/vcdb_triplet_0806.csv'
 
     init_logger(args.comment)
@@ -229,7 +326,7 @@ def main():
     criterion = nn.TripletMarginLoss(margin)
     l2_dist = nn.PairwiseDistance()
     optimizer = optim.SGD(net.parameters(), lr=learning_rate, weight_decay=weight_decay, momentum=0.9)
-    if args.optim=='adam':
+    if args.optim == 'adam':
         optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 30, 50], gamma=0.1)
@@ -265,19 +362,25 @@ def main():
 
     vcdb_core = np.load('/MLVD/VCDB/meta/vcdb_core.pkl', allow_pickle=True)
     vcdb_positives = read_positive_csv(vcdb_positives_path)
+    vcdb_annotation, vcdb_frame_annotation = scan_vcdb_annotation('/MLVD/VCDB/annotation')
     vcdb_all_frames = np.array(
         [os.path.join('/MLVD/VCDB/frames', k, f) for k, frames in vcdb_core.items() for f in frames])
 
-    vcdb_all_frames_loader = DataLoader(ListDataset(vcdb_all_frames, transform=transform['valid']), batch_size=128,
+    vcdb_all_frames_loader = DataLoader(ListDataset(vcdb_all_frames, transform=transform['valid']),
+                                        batch_size=128,
                                         shuffle=False, num_workers=4)
 
-    valid(net, valid_triplets_loader, criterion, l2_dist, 0)
-    positive_ranking(net, vcdb_all_frames_loader, vcdb_positives, 0)
+    # valid(net, valid_triplets_loader, criterion, l2_dist, 0)
+    positive_ranking2(net, vcdb_all_frames_loader, vcdb_frame_annotation, 0, 2, 10000)
+    positive_ranking2(net, vcdb_all_frames_loader, vcdb_frame_annotation, 0, 2, 1000)
+    positive_ranking2(net, vcdb_all_frames_loader, vcdb_frame_annotation, 0, 2, 100)
+    positive_ranking2(net, vcdb_all_frames_loader, vcdb_frame_annotation, 0, 2, 10)
 
     for e in range(1, args.epoch, 1):
         train(net, train_triplets_loader, optimizer, criterion, l2_dist, e)
-        valid(net, valid_triplets_loader, criterion, l2_dist, e)
-        positive_ranking(net, vcdb_all_frames_loader, vcdb_positives, e)
+        # valid(net, valid_triplets_loader, criterion, l2_dist, e)
+        # positive_ranking(net, vcdb_all_frames_loader, vcdb_positives, e)
+        positive_ranking2(net, vcdb_all_frames_loader, vcdb_frame_annotation, 0, 2, 1000)
         scheduler.step()
 
         # print(f'[EPOCH {e}] {d}')
