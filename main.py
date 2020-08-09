@@ -79,6 +79,7 @@ def init_logger(comment=''):
     logger.info(f'Log directory ... {log_dir}')
     logger.info("=========================================================")
 
+    return ckpt_dir
 
 def scan_vcdb_annotation(root):
     def parse(ann):
@@ -301,10 +302,10 @@ def main():
     ckpt = None
 
     vcdb_positives_path = 'sampling/data/vcdb_positive.csv'
-    train_triplets_path = 'sampling/data/fivr_triplet_0809.csv'  # 'sampling/fivr_triplet.csv'
+    train_triplets_path = 'sampling/data/fivr_triplet_0809_2.csv'  # 'sampling/fivr_triplet.csv'
     valid_triplets_path = 'sampling/data/vcdb_triplet_0806.csv'
 
-    init_logger(args.comment)
+    ckpt_dir=init_logger(args.comment)
     logger.info(args)
     logger.info(f'lr: {learning_rate}, margin: {margin}')
     logger.info(f'train_triplets_path: {train_triplets_path}, valid_triplets_path: {valid_triplets_path}')
@@ -383,10 +384,10 @@ def main():
         scheduler.step()
 
         # print(f'[EPOCH {e}] {d}')
-        # torch.save({'epoch': e,
-        #             'model_state_dict': net.module.embedding_net.state_dict(),
-        #             'optimizer_state_dict': optimizer.state_dict(),
-        #             }, f'{ckpt_dir}/epoch_{e}_ckpt.pth')
+        torch.save({'epoch': e,
+                    'model_state_dict': net.module.embedding_net.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    }, f'{ckpt_dir}/epoch_{e}_ckpt.pth')
 
 
 if __name__ == '__main__':
