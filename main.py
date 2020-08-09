@@ -204,9 +204,9 @@ def positive_ranking2(net, vcdb_loader, vcdb_frame_annotation, epoch, idx_margin
     vcdb_index = faiss.IndexFlatL2(features.shape[1])
     vcdb_index.add(features)
 
-    idx = defaultdict(list)
+    idx = defaultdict(set)
     for ann in vcdb_frame_annotation:
-        idx[frame_idx[ann[1]][ann[2]]].append(frame_idx[ann[3]][ann[4]])
+        idx[frame_idx[ann[1]][ann[2]]].add(frame_idx[ann[3]][ann[4]])
 
     # for ann in vcdb_frame_annotation:
     #     g, a, ai, b, bi = ann
@@ -371,16 +371,15 @@ def main():
                                         shuffle=False, num_workers=4)
 
     # valid(net, valid_triplets_loader, criterion, l2_dist, 0)
-    positive_ranking2(net, vcdb_all_frames_loader, vcdb_frame_annotation, 0, 2, 10000)
+
     positive_ranking2(net, vcdb_all_frames_loader, vcdb_frame_annotation, 0, 2, 1000)
-    positive_ranking2(net, vcdb_all_frames_loader, vcdb_frame_annotation, 0, 2, 100)
-    positive_ranking2(net, vcdb_all_frames_loader, vcdb_frame_annotation, 0, 2, 10)
+
 
     for e in range(1, args.epoch, 1):
         train(net, train_triplets_loader, optimizer, criterion, l2_dist, e)
         # valid(net, valid_triplets_loader, criterion, l2_dist, e)
         # positive_ranking(net, vcdb_all_frames_loader, vcdb_positives, e)
-        positive_ranking2(net, vcdb_all_frames_loader, vcdb_frame_annotation, 0, 2, 1000)
+        positive_ranking2(net, vcdb_all_frames_loader, vcdb_frame_annotation, e, 2, 1000)
         scheduler.step()
 
         # print(f'[EPOCH {e}] {d}')
