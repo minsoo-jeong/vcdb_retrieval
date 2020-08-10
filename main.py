@@ -331,7 +331,7 @@ def main():
         optimizer = optim.Adam(net.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 30, 50], gamma=0.1)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[50, 100], gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100], gamma=0.1)
     # Data
     transform = {
         'train': trn.Compose([

@@ -41,25 +41,28 @@ class MobileNet_RMAC(BaseModel):
         x = self.pool(x)
         x = self.norm(x)
         return x
-class MobileNet_RMAC2(BaseModel):
+
+
+class MobileNet_AVG(BaseModel):
     def __init__(self):
-        super(MobileNet_RMAC2, self).__init__()
-        self.base = models.mobilenet_v2(pretrained=True).features
-        self.pool = RMAC()
+        super(MobileNet_AVG, self).__init__()
+        self.base = nn.Sequential(
+            OrderedDict([*list(models.mobilenet_v2(pretrained=True).features.named_children())]))
+        self.pool = torch.nn.AdaptiveAvgPool2d((1, 1))
         self.norm = L2N()
 
     def forward(self, x):
         x = self.base(x)
-        x = self.pool(x)
+        x = self.pool(x).squeeze(-1).squeeze(-1)
         x = self.norm(x)
         return x
-
 
 
 class MobileNet_GeM(BaseModel):
     def __init__(self):
         super(MobileNet_GeM, self).__init__()
-        self.base = models.mobilenet_v2(pretrained=True).features
+        self.base = nn.Sequential(
+            OrderedDict([*list(models.mobilenet_v2(pretrained=True).features.named_children())]))
         self.pool = GeM()
         self.norm = L2N()
 
@@ -104,8 +107,8 @@ class DenseNet_RMAC(BaseModel):
 class DenseNet_GeM(BaseModel):
     def __init__(self):
         super(DenseNet_GeM, self).__init__()
-        self.base = nn.Sequential(*list(models.densenet121(pretrained=True).features.children()),
-                                  nn.ReLU(inplace=True))
+        self.base = nn.Sequential(OrderedDict([*list(models.densenet121(pretrained=True).features.named_children())] +
+                                              [('relu', nn.ReLU(inplace=True))]))
         self.pool = GeM()
         self.norm = L2N()
 
@@ -125,14 +128,13 @@ class TripletNet(BaseModel):
         if single:
             return self.forward_single(x[0])
         else:
-            return self.forward_triple(x[0],x[1],x[2])
-
+            return self.forward_triple(x[0], x[1], x[2])
 
     def forward_single(self, x):
         output = self.embedding_net(x)
         return output
 
-    def forward_triple(self, x1,x2,x3):
+    def forward_triple(self, x1, x2, x3):
         output1 = self.embedding_net(x1)
         output2 = self.embedding_net(x2)
         output3 = self.embedding_net(x3)

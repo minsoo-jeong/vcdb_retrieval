@@ -70,7 +70,7 @@ def distance(a, b):
 if __name__ == '__main__':
 
     fivr_bg = np.load('/MLVD/FIVR/meta/fivr_bg.pkl', allow_pickle=True)
-    positives = read_csv('data/fivr_positive_0809.csv')
+    positives = read_csv('data/fivr_positive.csv')
     print(positives)
     save_to = 'data/fivr_triplet_0809_2.csv'
     videos = {v: n for n, v in enumerate(sorted(list(set(list(positives.a) + list(positives.b)))))}
