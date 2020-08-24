@@ -104,6 +104,22 @@ class DenseNet_RMAC(BaseModel):
         return x
 
 
+class DenseNet_AVG(BaseModel):
+    def __init__(self):
+        super(DenseNet_AVG, self).__init__()
+
+        self.base = nn.Sequential(*list(models.densenet121(pretrained=True).features.children()),
+                                  nn.ReLU(inplace=True))
+        self.pool = torch.nn.AdaptiveAvgPool2d((1, 1))
+        self.norm = L2N()
+
+    def forward(self, x):
+        x = self.base(x)
+        x = self.pool(x).squeeze(-1).squeeze(-1)
+        x = self.norm(x)
+        return x
+
+
 class DenseNet_GeM(BaseModel):
     def __init__(self):
         super(DenseNet_GeM, self).__init__()
@@ -115,6 +131,36 @@ class DenseNet_GeM(BaseModel):
     def forward(self, x):
         x = self.base(x)
         x = self.pool(x)
+        x = self.norm(x)
+        return x
+
+
+class Resnet50_RMAC(BaseModel):
+    def __init__(self):
+        super(Resnet50_RMAC, self).__init__()
+        self.base = nn.Sequential(OrderedDict(list(models.resnet50(pretrained=True).named_children())[:-2]))
+
+        self.pool = RMAC()
+        self.norm = L2N()
+
+    def forward(self, x):
+        x = self.base(x)
+        x = self.pool(x)
+        x = self.norm(x)
+        return x
+
+
+class Resnet50_AVG(BaseModel):
+    def __init__(self):
+        super(Resnet50_AVG, self).__init__()
+
+        self.base = nn.Sequential(OrderedDict(list(models.resnet50(pretrained=True).named_children())[:-2]))
+        self.pool = torch.nn.AdaptiveAvgPool2d((1, 1))
+        self.norm = L2N()
+
+    def forward(self, x):
+        x = self.base(x)
+        x = self.pool(x).squeeze(-1).squeeze(-1)
         x = self.norm(x)
         return x
 
@@ -165,10 +211,20 @@ if __name__ == '__main__':
     # net = DenseNet_RMAC()
     # print(net)
     # print(net.summary((3, 224, 224), device='cpu'))
-    emb = MobileNet()
+    # print(OrderedDict(list(models.resnet50(pretrained=True).named_children())[:-2]))
+    # # print(OrderedDict([*list(models.resnet50(pretrained=True).named_children())[:-2]]))
+    # exit()
+
+    emb = Resnet50_RMAC()
+    from torchsummary import summary as sm
+
+    sm(emb, (3, 224, 224), device='cpu')
+    # print(emb.summary((3, 224, 224), device='cpu'))
+    exit()
     net = TripletNet(emb).cuda()
     net = nn.DataParallel(net)
-    print(net.module.summary((3, 3, 224, 224), device='cpu'))
-    print("====")
-    print(emb)
-    print(net)
+
+    print(net.module.summary((3, 3, 224, 224)))
+    # print("====")
+    # print(emb)
+    # print(net)

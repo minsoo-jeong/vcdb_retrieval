@@ -289,6 +289,7 @@ def positive_ranking(net, vcdb_loader, vcdb_positives, epoch):
 def main():
     parser = argparse.ArgumentParser(description="Train for VCDB Retrieval.")
     parser.add_argument('-lr', '--learning_rate', type=float, default=1e-4)
+    parser.add_argument('-wd', '--weight_decay', type=float, default=0)
     parser.add_argument('-m', '--margin', type=float, default=0.3)
     parser.add_argument('-c', '--comment', type=str, default='')
     parser.add_argument('-e', '--epoch', type=int, default=50)
@@ -298,11 +299,11 @@ def main():
 
     margin = args.margin
     learning_rate = args.learning_rate
-    weight_decay = 0  # 5e-5
+    weight_decay = args.weight_decay  # 5e-5
     ckpt = None
 
     vcdb_positives_path = 'sampling/data/vcdb_positive.csv'
-    train_triplets_path = 'sampling/data/fivr_triplet_0809_2.csv'  # 'sampling/fivr_triplet.csv'
+    train_triplets_path = 'sampling/data/fivr_triplet_0810.csv'  # 'sampling/fivr_triplet.csv'
     valid_triplets_path = 'sampling/data/vcdb_triplet_0806.csv'
 
     ckpt_dir=init_logger(args.comment)
@@ -372,9 +373,7 @@ def main():
                                         shuffle=False, num_workers=4)
 
     # valid(net, valid_triplets_loader, criterion, l2_dist, 0)
-
-    positive_ranking2(net, vcdb_all_frames_loader, vcdb_frame_annotation, 0, 2, 1000)
-
+    #positive_ranking2(net, vcdb_all_frames_loader, vcdb_frame_annotation, 0, 2, 1000)
 
     for e in range(1, args.epoch, 1):
         train(net, train_triplets_loader, optimizer, criterion, l2_dist, e)

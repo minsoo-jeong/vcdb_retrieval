@@ -36,7 +36,7 @@ def vcdb_pairs():
             groups[a] = groups[b] = group
 
             sa, ea, sb, eb = list(map(lambda x: time2sec(x), [sa, ea, sb, eb]))
-            key, value = (f'{a}/{b}', (a, b, sa, ea, sb, eb)) if a > b else (f'{b}/{a}', (b, a, sb, eb, sa, ea))
+            key, value = (f'{a}/{b}', (group,a, b, sa, ea, sb, eb)) if a > b else (f'{b}/{a}', (group,b, a, sb, eb, sa, ea))
             if pairs.get(key):
                 pairs[key].append(value)
             else:
@@ -79,7 +79,7 @@ def parse_pairs(pairs, video2idx, length, frame_idx):
         if frame_pair.get(b_v_idx) is None:
             frame_pair[b_v_idx] = {'db': set(), 'video': dict()}
         for p in pair:
-            (_, _, sa, ea, sb, eb) = p
+            (_, _, _,sa, ea, sb, eb) = p
             a_seg = np.arange(sa, min(ea + 1, a_v_len))
             b_seg = np.arange(sb, min(eb + 1, b_v_len))
 
@@ -195,11 +195,31 @@ if __name__ == '__main__':
     # vcdb_features = vcdb_features / (np.linalg.norm(vcdb_features, ord=2, axis=1, keepdims=True) + 1e-15)
     vcdb_frame_pairs = parse_pairs(pairs, video2idx, length, vcdb_frame_index)
 
-    query_videos = np.load('/MLVD/VCDB/meta/vcdb_videos.npy')[:args.query]
+    def get_query_videos(root):
+        def parse(ann):
+            a, b, *times = ann.strip().split(',')
+            times = [sum([60 ** (2 - n) * int(u) for n, u in enumerate(t.split(':'))]) for t in times]
+            return [a, b, *times]
+        videos=[]
+        groups = os.listdir(root)
+        for g in groups:
+            f = open(os.path.join(root, g), 'r')
+            for l in f.readlines():
+                a, b, sa, ea, sb, eb = l.strip().split(',')
+                if a not in videos:
+                    videos.append(a)
+                if b not in videos:
+                    videos.append(b)
+        return videos
+    #query_videos = np.load('/MLVD/VCDB/meta/vcdb_videos.npy')[:args.query]
+    query_videos = get_query_videos('/MLVD/VCDB/annotation')
+    print(query_videos[:10])
+
+
 
     global all_video_db
     # all_video_db = faiss.IndexFlatL2(vcdb_features.shape[1])
-    all_video_db = faiss.IndexFlatIP(vcdb_features.shape[1])
+    all_video_db = faiss.IndexFlatL2(vcdb_features.shape[1])
     all_video_db.add(vcdb_features)
     print(vcdb_features.shape)
 
